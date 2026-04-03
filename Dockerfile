@@ -10,5 +10,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Default command
-ENTRYPOINT ["python", "src/inference.py"]
+ENTRYPOINT ["python", "inference.py"]
 CMD ["--task", "easy", "--episodes", "5"]

@@ -13,6 +13,57 @@ disaster management, and healthcare logistics.
 import numpy as np
 from typing import Dict, List, Tuple, Any
 import random
+from pydantic import BaseModel
+
+
+# ============================================================================
+# OPENENV COMPLIANCE: Typed Models (Pydantic)
+# ============================================================================
+
+class Emergency(BaseModel):
+    """Emergency incident model."""
+    id: int
+    severity: int
+    location: int
+    time_waiting: int
+    assigned: bool
+
+
+class Ambulance(BaseModel):
+    """Ambulance resource model."""
+    id: int
+    location: int
+    available: bool
+    busy_until: int
+
+
+class Hospital(BaseModel):
+    """Hospital facility model."""
+    id: int
+    location: int
+    capacity: int
+    patients: int
+
+
+class Observation(BaseModel):
+    """OpenEnv Observation - state representation."""
+    emergencies: List[Emergency]
+    ambulances: List[Ambulance]
+    hospitals: List[Hospital]
+    traffic_level: int
+    step: int
+
+
+class Action(BaseModel):
+    """OpenEnv Action - agent decision."""
+    ambulance_id: int
+    emergency_id: int
+    hospital_id: int
+
+
+class Reward(BaseModel):
+    """OpenEnv Reward - scalar feedback."""
+    value: float
 
 
 class EmergencyResponseEnv:
@@ -36,7 +87,7 @@ class EmergencyResponseEnv:
     - resource_usage (0.2): Reward for efficient ambulance/hospital utilization
     """
     
-    def __init__(self, task_difficulty: str = "easy"):
+    def __init__(self, task_difficulty: str = "easy", seed: int = None):
         """
         Initialize emergency response environment.
         
@@ -45,8 +96,16 @@ class EmergencyResponseEnv:
                 - easy: 2-3 emergencies, all ambulances available, hospitals free
                 - medium: 4-5 emergencies, some ambulances busy, limited capacity
                 - hard: 6-8 emergencies, traffic delays, hospital overload
+            seed: Random seed for deterministic behavior (optional)
         """
         self.task_difficulty = task_difficulty
+        self.seed_value = seed
+        
+        # Set random seed for determinism
+        if seed is not None:
+            np.random.seed(seed)
+            random.seed(seed)
+        
         self._init_task_parameters()
         
         # Episode tracking metrics
@@ -141,39 +200,51 @@ class EmergencyResponseEnv:
         return self._get_state()
     
     def _get_state(self) -> Dict[str, Any]:
-        """Get current environment state."""
-        return {
-            "emergencies": [
-                {
-                    "id": e["id"],
-                    "severity": e["severity"],
-                    "location": e["location"],
-                    "time_waiting": e["time_waiting"],
-                    "assigned": e["assigned_ambulance"] is not None
-                }
-                for e in self.emergencies
-            ],
-            "ambulances": [
-                {
-                    "id": a["id"],
-                    "location": a["location"],
-                    "available": a["available"],
-                    "busy_until": a["busy_until"]
-                }
-                for a in self.ambulances
-            ],
-            "hospitals": [
-                {
-                    "id": h["id"],
-                    "location": h["location"],
-                    "capacity": h["current_capacity"],
-                    "patients": h["patients"]
-                }
-                for h in self.hospitals
-            ],
-            "traffic_level": self.traffic_level,
-            "step": self.step_count
-        }
+        """Get current environment state as Observation."""
+        emergencies_data = [
+            Emergency(
+                id=e["id"],
+                severity=e["severity"],
+                location=e["location"],
+                time_waiting=e["time_waiting"],
+                assigned=e["assigned_ambulance"] is not None
+            )
+            for e in self.emergencies
+        ]
+        
+        ambulances_data = [
+            Ambulance(
+                id=a["id"],
+                location=a["location"],
+                available=a["available"],
+                busy_until=a["busy_until"]
+            )
+            for a in self.ambulances
+        ]
+        
+        hospitals_data = [
+            Hospital(
+                id=h["id"],
+                location=h["location"],
+                capacity=h["current_capacity"],
+                patients=h["patients"]
+            )
+            for h in self.hospitals
+        ]
+        
+        observation = Observation(
+            emergencies=emergencies_data,
+            ambulances=ambulances_data,
+            hospitals=hospitals_data,
+            traffic_level=self.traffic_level,
+            step=self.step_count
+        )
+        
+        # Return as dict for compatibility (works with Pydantic v1 and v2)
+        if hasattr(observation, 'model_dump'):
+            return observation.model_dump()
+        else:
+            return observation.dict()
     
     def step(self, action: Dict[str, int]) -> Tuple[Dict, float, bool, Dict]:
         """
@@ -312,7 +383,7 @@ class EmergencyResponseEnv:
         emergency["assigned_ambulance"] = ambulance_id
         emergency["assigned_hospital"] = hospital_id
         ambulance["available"] = False
-        ambulance["busy_until"] = travel_time + 5  # Recovery time
+        ambulance["busy_until"] = int(travel_time + 5)  # Recovery time (convert to int)
         ambulance["current_emergency"] = emergency_id
         hospital["current_capacity"] -= 1
         hospital["patients"] += 1

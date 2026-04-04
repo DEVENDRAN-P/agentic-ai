@@ -181,7 +181,8 @@ def run_inference(
     num_episodes: int = 5,
     agent_type: str = "heuristic",
     verbose: bool = True,
-    use_open_env_format: bool = True
+    use_open_env_format: bool = True,
+    seed: int = None
 ) -> Dict[str, Any]:
     """
     Run inference experiments.
@@ -192,19 +193,20 @@ def run_inference(
         agent_type: "random" or "heuristic"
         verbose: Print debug info
         use_open_env_format: Use [START]/[STEP]/[END] format (OpenEnv compliant)
+        seed: Random seed for deterministic behavior (optional)
     
     Returns:
         Results summary
     """
     if use_open_env_format:
-        print(f"[START] task={task_difficulty} env=emergency model={agent_type} episodes={num_episodes}")
+        print(f"[START] task={task_difficulty} env=emergency-response-env model={agent_type} episodes={num_episodes}")
     else:
         print(f"\nRunning {num_episodes} episodes on {task_difficulty} task...")
         print(f"Agent: {agent_type.capitalize()}")
         print("-" * 60)
     
-    # Create environment and agent
-    env = EmergencyResponseEnv(task_difficulty=task_difficulty)
+    # Create environment and agent (with seed for determinism)
+    env = EmergencyResponseEnv(task_difficulty=task_difficulty, seed=seed)
     if agent_type == "random":
         agent = RandomBaselineAgent(env)
     else:

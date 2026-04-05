@@ -11,13 +11,13 @@
 
 ### 🟢 1. DEPLOYMENT (AUTO REJECTION IF FAIL)
 
-| Item | Status | Details |
-|------|--------|---------|
-| Hugging Face Space Running | ✅ | https://devendranp-Agentic-ai-app.hf.space |
-| No Config Error | ✅ | FastAPI + Uvicorn properly configured |
-| App Returns 200 Response | ✅ | Endpoints / and /run operational |
-| Port 7860 Exposed | ✅ | Dockerfile EXPOSE 7860 |
-| URL Works | ✅ | Space responds at configured URL |
+| Item                       | Status | Details                                    |
+| -------------------------- | ------ | ------------------------------------------ |
+| Hugging Face Space Running | ✅     | https://devendranp-Agentic-ai-app.hf.space |
+| No Config Error            | ✅     | FastAPI + Uvicorn properly configured      |
+| App Returns 200 Response   | ✅     | Endpoints / and /run operational           |
+| Port 7860 Exposed          | ✅     | Dockerfile EXPOSE 7860                     |
+| URL Works                  | ✅     | Space responds at configured URL           |
 
 **Result: PASSED ✅**
 
@@ -25,15 +25,16 @@
 
 ### 🟢 2. DOCKER (CRITICAL)
 
-| Item | Status | Details |
-|------|--------|---------|
-| Dockerfile Present | ✅ | Located at root |
-| Builds Without Error | ✅ | Multi-stage build optimized |
-| Works on 2 vCPU, 8GB RAM | ✅ | Python 3.11-slim base image (minimal overhead) |
-| Exposes Port 7860 | ✅ | EXPOSE 7860 in Dockerfile |
-| FastAPI + Uvicorn Setup | ✅ | CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860"] |
+| Item                     | Status | Details                                                           |
+| ------------------------ | ------ | ----------------------------------------------------------------- |
+| Dockerfile Present       | ✅     | Located at root                                                   |
+| Builds Without Error     | ✅     | Multi-stage build optimized                                       |
+| Works on 2 vCPU, 8GB RAM | ✅     | Python 3.11-slim base image (minimal overhead)                    |
+| Exposes Port 7860        | ✅     | EXPOSE 7860 in Dockerfile                                         |
+| FastAPI + Uvicorn Setup  | ✅     | CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860"] |
 
 **Dockerfile Content:**
+
 ```dockerfile
 FROM python:3.11-slim
 WORKDIR /app
@@ -50,14 +51,15 @@ CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860"]
 
 ### 🟢 3. OPENENV SPEC (VERY IMPORTANT)
 
-| Method | Status | Implemented | Details |
-|--------|--------|-------------|---------|
-| `step(action)` | ✅ | YES | Returns (state, reward, done, info) |
-| `reset()` | ✅ | YES | Returns initial state |
-| `state()` | ✅ | YES | Returns current observation |
-| Pydantic Models | ✅ | YES | Emergency, Ambulance, Hospital, Observation, Action |
+| Method          | Status | Implemented | Details                                             |
+| --------------- | ------ | ----------- | --------------------------------------------------- |
+| `step(action)`  | ✅     | YES         | Returns (state, reward, done, info)                 |
+| `reset()`       | ✅     | YES         | Returns initial state                               |
+| `state()`       | ✅     | YES         | Returns current observation                         |
+| Pydantic Models | ✅     | YES         | Emergency, Ambulance, Hospital, Observation, Action |
 
 **Pydantic Models Used:**
+
 ```python
 # Observation Model
 class Observation(BaseModel):
@@ -80,11 +82,11 @@ class Action(BaseModel):
 
 ### 🟢 4. TASKS (MANDATORY)
 
-| Task | Num | Difficulty | Status |
-|------|-----|-----------|--------|
-| Easy | 1 | 🟢 | 3 emergencies, full ambulance availability, free hospitals |
-| Medium | 2 | 🟡 | 5 emergencies, limited ambulances, capacity constraints |
-| Hard | 3 | 🔴 | 8 emergencies, severe constraints, heavy traffic |
+| Task   | Num | Difficulty | Status                                                     |
+| ------ | --- | ---------- | ---------------------------------------------------------- |
+| Easy   | 1   | 🟢         | 3 emergencies, full ambulance availability, free hospitals |
+| Medium | 2   | 🟡         | 5 emergencies, limited ambulances, capacity constraints    |
+| Hard   | 3   | 🔴         | 8 emergencies, severe constraints, heavy traffic           |
 
 **Task Parameters:**
 
@@ -114,20 +116,22 @@ HARD:
 
 ### 🟢 5. GRADERS (DETERMINISTIC & NON-CONSTANT)
 
-| Metric | Weight | Type | Status |
-|--------|--------|------|--------|
-| Priority Handling | 50% | Dynamic | ✅ Varies by performance |
-| Response Speed | 30% | Dynamic | ✅ Varies by performance |
-| Resource Usage | 20% | Dynamic | ✅ Varies by performance |
-| **Final Score** | 100% | Range [0.0-1.0] | ✅ Deterministic + Reproducible |
+| Metric            | Weight | Type            | Status                          |
+| ----------------- | ------ | --------------- | ------------------------------- |
+| Priority Handling | 50%    | Dynamic         | ✅ Varies by performance        |
+| Response Speed    | 30%    | Dynamic         | ✅ Varies by performance        |
+| Resource Usage    | 20%    | Dynamic         | ✅ Varies by performance        |
+| **Final Score**   | 100%   | Range [0.0-1.0] | ✅ Deterministic + Reproducible |
 
 **Scoring Formula:**
+
 ```
 final_score = 0.5 * priority_handling + 0.3 * response_speed + 0.2 * resource_usage
 Range: [0.0, 1.0] (normalized and clamped)
 ```
 
 **Grader Type:**
+
 - ✅ NOT constant (varies by episode)
 - ✅ Uses real episode data
 - ✅ Deterministic (seed-based reproducibility)
@@ -139,14 +143,15 @@ Range: [0.0, 1.0] (normalized and clamped)
 
 ### 🟢 6. REWARD FUNCTION
 
-| Component | Weight | Penalty | Reward | Range |
-|-----------|--------|---------|--------|-------|
-| Priority Handling | 0.5 | -0.5 | +0.5 | [-0.5, +0.5] |
-| Response Speed | 0.3 | -0.3 | +0.3 | [-0.3, +0.3] |
-| Resource Usage | 0.2 | -0.2 | +0.2 | [-0.2, +0.2] |
-| Invalid Action | N/A | -0.4 | N/A | -0.4 |
+| Component         | Weight | Penalty | Reward | Range        |
+| ----------------- | ------ | ------- | ------ | ------------ |
+| Priority Handling | 0.5    | -0.5    | +0.5   | [-0.5, +0.5] |
+| Response Speed    | 0.3    | -0.3    | +0.3   | [-0.3, +0.3] |
+| Resource Usage    | 0.2    | -0.2    | +0.2   | [-0.2, +0.2] |
+| Invalid Action    | N/A    | -0.4    | N/A    | -0.4         |
 
 **Step-Level Rewards:**
+
 - ✅ Assign ambulance quickly: +0.4
 - ✅ Handle high-severity first: +0.5
 - ✅ Efficient hospital choice: +0.3
@@ -162,20 +167,22 @@ Range: [0.0, 1.0] (normalized and clamped)
 
 ### 🟢 7. INFERENCE SCRIPT (VERY STRICT)
 
-| Item | Status | Details |
-|------|--------|---------|
-| File Name | ✅ | `inference.py` (root level) |
-| Uses Environment | ✅ | EmergencyResponseEnv instantiated |
-| Runs All Tasks | ✅ | easy, medium, hard |
-| Uses OpenAI Client | ✅ | Optional with fallback to heuristic |
-| Env Variables | ✅ | API_BASE_URL, MODEL_NAME, HF_TOKEN |
+| Item               | Status | Details                             |
+| ------------------ | ------ | ----------------------------------- |
+| File Name          | ✅     | `inference.py` (root level)         |
+| Uses Environment   | ✅     | EmergencyResponseEnv instantiated   |
+| Runs All Tasks     | ✅     | easy, medium, hard                  |
+| Uses OpenAI Client | ✅     | Optional with fallback to heuristic |
+| Env Variables      | ✅     | API_BASE_URL, MODEL_NAME, HF_TOKEN  |
 
 **Entry Point:**
+
 ```bash
 python inference.py --task easy --episodes 5 --agent heuristic
 ```
 
 **Agent Types:**
+
 - RandomBaselineAgent ✅
 - SmartHeuristicAgent ✅
 - OpenAIAgent ✅ (with fallback)
@@ -195,6 +202,7 @@ python inference.py --task easy --episodes 5 --agent heuristic
 ```
 
 **Example Output:**
+
 ```
 [START] task=easy env=emergency-response-env model=heuristic
 [STEP] step=1 action=(1,1,1) reward=0.45 done=false error=null
@@ -213,15 +221,16 @@ python inference.py --task easy --episodes 5 --agent heuristic
 
 ### 🟢 9. BASELINE WORKING
 
-| Component | Status | Verification |
-|-----------|--------|----------------|
-| RandomBaselineAgent | ✅ | Produces valid actions, no crashes |
-| SmartHeuristicAgent | ✅ | Produces scores > random baseline |
-| No Crashes | ✅ | Runs to completion |
-| Reproducible | ✅ | Seed-based (seed=42 default) |
-| Score Tracking | ✅ | Metrics calculated per episode |
+| Component           | Status | Verification                       |
+| ------------------- | ------ | ---------------------------------- |
+| RandomBaselineAgent | ✅     | Produces valid actions, no crashes |
+| SmartHeuristicAgent | ✅     | Produces scores > random baseline  |
+| No Crashes          | ✅     | Runs to completion                 |
+| Reproducible        | ✅     | Seed-based (seed=42 default)       |
+| Score Tracking      | ✅     | Metrics calculated per episode     |
 
 **Validation Output:**
+
 ```
 ✓ All modules import successfully
 ✓ OpenEnv compliance verified (step, reset, state)
@@ -238,36 +247,50 @@ python inference.py --task easy --episodes 5 --agent heuristic
 
 ### 🟢 10. README (VERY IMPORTANT FOR MARKS)
 
-| Section | Status | Content |
-|---------|--------|---------|
-| Problem Explanation | ✅ | Real emergency dispatch optimization |
-| Real-World Use | ✅ | Smart cities, disaster management, healthcare |
-| State Space | ✅ | Complete JSON example with all fields |
-| Action Space | ✅ | ambulance_id, emergency_id, hospital_id |
-| Reward Function | ✅ | 3 components with formulas and tables |
-| Task Explanation | ✅ | Easy/Medium/Hard with parameters |
-| Setup Instructions | ✅ | Installation and running examples |
-| Example Output | ✅ | Sample inference results |
+| Section             | Status | Content                                       |
+| ------------------- | ------ | --------------------------------------------- |
+| Problem Explanation | ✅     | Real emergency dispatch optimization          |
+| Real-World Use      | ✅     | Smart cities, disaster management, healthcare |
+| State Space         | ✅     | Complete JSON example with all fields         |
+| Action Space        | ✅     | ambulance_id, emergency_id, hospital_id       |
+| Reward Function     | ✅     | 3 components with formulas and tables         |
+| Task Explanation    | ✅     | Easy/Medium/Hard with parameters              |
+| Setup Instructions  | ✅     | Installation and running examples             |
+| Example Output      | ✅     | Sample inference results                      |
 
 **File:** `README.md` (14.8 kB - comprehensive)
 
 **Sections Present:**
+
 ```markdown
 # Problem Statement
+
 # Solution
+
 # Real-World Impact
+
 # Environment Design
-  - State Space
-  - Action Space
-  - Reward Function
+
+- State Space
+- Action Space
+- Reward Function
+
 # Task Progression
+
 # Quick Start
+
 # Installation
+
 # Running Inference
+
 # Example Output
+
 # Project Structure
+
 # Configuration
+
 # Testing
+
 # Deployment (Docker + HF Spaces)
 ```
 
@@ -278,6 +301,7 @@ python inference.py --task easy --episodes 5 --agent heuristic
 ### 🟢 11. FILE STRUCTURE
 
 **Expected Structure:**
+
 ```
 agentic-ai/
 ├── app.py                   ✅ FastAPI entry point for HF Spaces
@@ -318,6 +342,7 @@ agentic-ai/
 **Command:** `python validate_hackathon.py`
 
 **Output:**
+
 ```
 ╔══════════════════════════════════════════════════════════╗
 ║ EMERGENCY RESPONSE ENVIRONMENT - HACKATHON VALIDATION ║
@@ -346,14 +371,14 @@ Checking Curriculum Learning... ✓ Curriculum learning operational
 
 ### 🟢 13. PERFORMANCE
 
-| Metric | Target | Actual | Status |
-|--------|--------|--------|--------|
-| Easy Task (5 episodes) | < 5 min | ~2 min | ✅ |
-| Medium Task (5 episodes) | < 10 min | ~5 min | ✅ |
-| Hard Task (5 episodes) | < 20 min | ~10 min | ✅ |
-| Infinite Loops | None | 0 | ✅ |
-| CPU Compatible | YES | YES | ✅ |
-| Max Steps | N/A | 100 | ✅ |
+| Metric                   | Target   | Actual  | Status |
+| ------------------------ | -------- | ------- | ------ |
+| Easy Task (5 episodes)   | < 5 min  | ~2 min  | ✅     |
+| Medium Task (5 episodes) | < 10 min | ~5 min  | ✅     |
+| Hard Task (5 episodes)   | < 20 min | ~10 min | ✅     |
+| Infinite Loops           | None     | 0       | ✅     |
+| CPU Compatible           | YES      | YES     | ✅     |
+| Max Steps                | N/A      | 100     | ✅     |
 
 **Result: PASSED ✅**
 
@@ -361,14 +386,15 @@ Checking Curriculum Learning... ✓ Curriculum learning operational
 
 ### 🟢 14. ENVIRONMENT VARIABLES
 
-| Variable | Used | Safe Handling | Status |
-|----------|------|---|--|
-| API_BASE_URL | ✅ Optional | Defaults to OpenAI v1 | ✅ |
-| MODEL_NAME | ✅ Optional | Defaults to gpt-3.5-turbo | ✅ |
-| HF_TOKEN | ✅ Optional | Fallback to heuristic agent | ✅ |
-| OPENAI_API_KEY | ✅ Optional | Read from HF_TOKEN if not set | ✅ |
+| Variable       | Used        | Safe Handling                 | Status |
+| -------------- | ----------- | ----------------------------- | ------ |
+| API_BASE_URL   | ✅ Optional | Defaults to OpenAI v1         | ✅     |
+| MODEL_NAME     | ✅ Optional | Defaults to gpt-3.5-turbo     | ✅     |
+| HF_TOKEN       | ✅ Optional | Fallback to heuristic agent   | ✅     |
+| OPENAI_API_KEY | ✅ Optional | Read from HF_TOKEN if not set | ✅     |
 
 **Implementation:**
+
 ```python
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "gpt-3.5-turbo")
@@ -382,14 +408,14 @@ OPENAI_API_KEY = HF_TOKEN
 
 ### 🟢 15. FINAL SUBMISSION
 
-| Item | Status | Link |
-|------|--------|------|
-| GitHub Repository | ✅ | https://github.com/DEVENDRAN-P/agentic-ai |
-| Hugging Face Space | ✅ | https://devendranp-Agentic-ai-app.hf.space |
-| All Files Committed | ✅ | Last push: April 5, 2026 |
-| Dockerfile Builds | ✅ | Tested and verified |
-| App Runs | ✅ | No errors, responds on port 7860 |
-| Inference Works | ✅ | All tasks run successfully |
+| Item                | Status | Link                                       |
+| ------------------- | ------ | ------------------------------------------ |
+| GitHub Repository   | ✅     | https://github.com/DEVENDRAN-P/agentic-ai  |
+| Hugging Face Space  | ✅     | https://devendranp-Agentic-ai-app.hf.space |
+| All Files Committed | ✅     | Last push: April 5, 2026                   |
+| Dockerfile Builds   | ✅     | Tested and verified                        |
+| App Runs            | ✅     | No errors, responds on port 7860           |
+| Inference Works     | ✅     | All tasks run successfully                 |
 
 **Result: PASSED ✅**
 
@@ -397,14 +423,14 @@ OPENAI_API_KEY = HF_TOKEN
 
 ## 🔴 DISQUALIFICATION CHECK
 
-| Criteria | Status | Notes |
-|----------|--------|-------|
-| Original Implementation | ✅ | Custom emergency response environment |
-| Grader NOT Constant | ✅ | 3-metric dynamic evaluation |
-| NOT Toy Problem | ✅ | Realistic emergency dispatch |
-| HF Space Responds | ✅ | 200 OK on endpoint requests |
-| Docker Works | ✅ | Builds and runs successfully |
-| All Requirements Met | ✅ | 15/15 passed |
+| Criteria                | Status | Notes                                 |
+| ----------------------- | ------ | ------------------------------------- |
+| Original Implementation | ✅     | Custom emergency response environment |
+| Grader NOT Constant     | ✅     | 3-metric dynamic evaluation           |
+| NOT Toy Problem         | ✅     | Realistic emergency dispatch          |
+| HF Space Responds       | ✅     | 200 OK on endpoint requests           |
+| Docker Works            | ✅     | Builds and runs successfully          |
+| All Requirements Met    | ✅     | 15/15 passed                          |
 
 **Disqualification Risk:** ZERO ✅
 
@@ -414,14 +440,14 @@ OPENAI_API_KEY = HF_TOKEN
 
 Based on hackathon rubric:
 
-| Criterion | Weight | Estimated | Score |
-|-----------|--------|-----------|-------|
-| Real-world Utility | 30% | Excellent (Emergency response) | 28/30 |
-| Task & Grader Quality | 25% | Excellent (3-metric + 3-task) | 24/25 |
-| Environment Design | 20% | Excellent (Rich state + dynamics) | 19/20 |
-| Code Quality | 15% | Excellent (Modular + clean) | 14/15 |
-| Creativity | 10% | Very Good (Loop detection + agents) | 9/10 |
-| **TOTAL** | 100% | **Excellent** | **94/100** |
+| Criterion             | Weight | Estimated                           | Score      |
+| --------------------- | ------ | ----------------------------------- | ---------- |
+| Real-world Utility    | 30%    | Excellent (Emergency response)      | 28/30      |
+| Task & Grader Quality | 25%    | Excellent (3-metric + 3-task)       | 24/25      |
+| Environment Design    | 20%    | Excellent (Rich state + dynamics)   | 19/20      |
+| Code Quality          | 15%    | Excellent (Modular + clean)         | 14/15      |
+| Creativity            | 10%    | Very Good (Loop detection + agents) | 9/10       |
+| **TOTAL**             | 100%   | **Excellent**                       | **94/100** |
 
 ---
 

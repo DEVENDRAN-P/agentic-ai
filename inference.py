@@ -29,7 +29,7 @@ load_dotenv()
 
 from src.env import EmergencyResponseEnv
 from src.graders import create_grader_for_task
-from src.inference import RandomBaselineAgent, SmartHeuristicAgent
+from src.inference import RandomBaselineAgent, SmartHeuristicAgent, QLearningAgent
 
 # Environment variables for OpenAI (per hackathon requirements)
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
@@ -147,6 +147,8 @@ def run_inference(
         agent = OpenAIAgent(env)
     elif agent_type == "random":
         agent = RandomBaselineAgent(env)
+    elif agent_type == "qlearn":
+        agent = QLearningAgent(env)
     else:  # heuristic
         agent = SmartHeuristicAgent(env)
     
@@ -210,6 +212,10 @@ def run_inference(
         episode_metrics = grader.evaluate_episode(env, step_history)
         episode_score = float(episode_metrics.get("final_score", 0.0))
         
+        # For Q-learning agent: end episode to decay exploration
+        if hasattr(agent, 'end_episode'):
+            agent.end_episode()
+        
         # Emit [END] for this episode
         success = episode_score >= SUCCESS_SCORE_THRESHOLD
         log_end(success=success, steps=episode_step, score=episode_score, rewards=step_rewards)
@@ -247,7 +253,7 @@ def main():
     parser = argparse.ArgumentParser(description="OpenEnv Emergency Response Inference")
     parser.add_argument("--task", choices=["easy", "medium", "hard"], default="easy", help="Task difficulty")
     parser.add_argument("--episodes", type=int, default=5, help="Number of episodes")
-    parser.add_argument("--agent", choices=["random", "heuristic", "llm"], default="heuristic", help="Agent type")
+    parser.add_argument("--agent", choices=["random", "heuristic", "qlearn", "llm"], default="heuristic", help="Agent type")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--output", type=str, default="results.json", help="Output file")
     

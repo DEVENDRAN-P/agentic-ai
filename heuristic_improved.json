@@ -1,0 +1,43 @@
+{
+  "task_difficulty": "hard",
+  "agent_type": "heuristic",
+  "num_episodes": 2,
+  "episodes": [
+    {
+      "episode": 1,
+      "reward": -35.79999999999994,
+      "score": 0.1652941176470588,
+      "steps": 100,
+      "metrics": {
+        "priority_handling": 0.0,
+        "response_speed": 0.7666666666666666,
+        "resource_usage": 1.0,
+        "final_score": 0.1652941176470588
+      }
+    },
+    {
+      "episode": 2,
+      "reward": -35.099999999999945,
+      "score": 0.1903571428571429,
+      "steps": 100,
+      "metrics": {
+        "priority_handling": 0.0,
+        "response_speed": 0.825,
+        "resource_usage": 1.0,
+        "final_score": 0.1903571428571429
+      }
+    }
+  ],
+  "statistics": {
+    "avg_score": 0.17782563025210085,
+    "avg_reward": -35.449999999999946,
+    "final_scores": [
+      0.1652941176470588,
+      0.1903571428571429
+    ],
+    "episode_rewards": [
+      -35.79999999999994,
+      -35.099999999999945
+    ]
+  }
+}

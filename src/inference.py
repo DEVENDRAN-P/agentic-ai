@@ -79,7 +79,8 @@ class SmartHeuristicAgent:
     
     Key features:
     1. Aggressive Loop Breaking: If any action repeats 2+ times → change
-    2. Strong Exploration: 30% random to escape dead-ends in hard tasks
+    2. Strong Exploration: 50% random to escape dead-ends in hard tasks
+    3. Memory: Tracks bad action combinations to avoid repeating them
     
     This prevents the agent from getting stuck in penalty spirals.
     """
@@ -88,21 +89,27 @@ class SmartHeuristicAgent:
         self.env = env
         self.last_action = None
         self.action_repeat_count = 0
-        self.exploration_rate = 0.5  # 50% exploration (very high for hard tasks)
+        # Higher exploration rate for hard tasks
+        self.exploration_rate = 0.5 if env.task_difficulty == "hard" else 0.2
         self.steps_since_last_positive = 0
+        self.bad_actions = set()  # Track bad action combinations
+        self.negative_streak = 0  # Count consecutive negative rewards
     
     def get_action(self, state: Dict[str, Any]) -> Dict[str, int]:
-        """Generate intelligent action with aggressive loop breaking."""
-        # Get available resources
+        """Generate intelligent action with aggressive loop breaking and memory."""
+        # Get available resources - strict filtering
         available_ambulances = [a for a in state["ambulances"] if a["available"]]
         unassigned_emergencies = [
             e for e in state["emergencies"] if not e["assigned"]
         ]
         unassigned_emergencies.sort(key=lambda e: e["severity"], reverse=True)
-        available_hospitals = [h for h in state["hospitals"] if h["capacity"] > 0]
+        # Be conservative: prefer hospitals with plenty of capacity
+        available_hospitals = [h for h in state["hospitals"] if h["capacity"] > 2]
+        if not available_hospitals:  # Fallback if all hospitals full
+            available_hospitals = [h for h in state["hospitals"] if h["capacity"] > 0]
         available_hospitals.sort(key=lambda h: h["capacity"], reverse=True)
         
-        # Fallback options
+        # Fallback options if nothing available
         if not available_ambulances:
             available_ambulances = state["ambulances"]
         if not unassigned_emergencies:
@@ -116,24 +123,34 @@ class SmartHeuristicAgent:
         
         # **AGGRESSIVE LOOP BREAKING**: If same action repeats 2+ times, force change
         if self.last_action is not None and self.action_repeat_count >= 2:
-            # Force random action to escape
+            # Force random action to escape immediately
+            ambulance_id = int(np.random.choice([a["id"] for a in available_ambulances]))
+            emergency_id = int(np.random.choice([e["id"] for e in unassigned_emergencies]))
+            hospital_id = int(np.random.choice([h["id"] for h in available_hospitals]))
+            
             action = {
-                "ambulance_id": int(np.random.choice([a["id"] for a in available_ambulances])),
-                "emergency_id": int(np.random.choice([e["id"] for e in unassigned_emergencies])),
-                "hospital_id": int(np.random.choice([h["id"] for h in available_hospitals]))
+                "ambulance_id": ambulance_id,
+                "emergency_id": emergency_id,
+                "hospital_id": hospital_id
             }
             # IMPORTANT: Reset tracking for new action
             self.action_repeat_count = 0
-            self.steps_since_last_positive = 0
+            self.negative_streak = 0
             self.last_action = action
+            self.bad_actions.add((ambulance_id, emergency_id, hospital_id))
             return action
         
-        # **EXPLORATION**: 30% random to find better paths
-        if np.random.random() < self.exploration_rate:
+        # **EXPLORATION**: 50% random during hard task to find better paths
+        if np.random.random() < self.exploration_rate or self.negative_streak > 5:
+            # EXPLORATION: random action
+            ambulance_id = int(np.random.choice([a["id"] for a in available_ambulances]))
+            emergency_id = int(np.random.choice([e["id"] for e in unassigned_emergencies]))
+            hospital_id = int(np.random.choice([h["id"] for h in available_hospitals]))
+            
             action = {
-                "ambulance_id": int(np.random.choice([a["id"] for a in available_ambulances])),
-                "emergency_id": int(np.random.choice([e["id"] for e in unassigned_emergencies])),
-                "hospital_id": int(np.random.choice([h["id"] for h in available_hospitals]))
+                "ambulance_id": ambulance_id,
+                "emergency_id": emergency_id,
+                "hospital_id": hospital_id
             }
             # Track this new action
             if action == self.last_action:
@@ -143,7 +160,7 @@ class SmartHeuristicAgent:
                 self.last_action = action
             return action
         
-        # **GREEDY** (70% of time): highest severity + closest ambulance + best hospital
+        # **GREEDY** (50% of time): highest severity + closest ambulance + healthy hospital
         target_emergency = unassigned_emergencies[0]
         
         closest_ambulance = min(
@@ -151,6 +168,7 @@ class SmartHeuristicAgent:
             key=lambda a: abs(a["location"] - target_emergency["location"])
         )
         
+        # Prefer hospitals with good capacity
         best_hospital = max(
             available_hospitals,
             key=lambda h: h["capacity"]
@@ -176,6 +194,120 @@ class SmartHeuristicAgent:
         """Optional reward tracking."""
         if reward > 0:
             self.steps_since_last_positive = 0
+
+
+class QLearningAgent:
+    """
+    Q-Learning agent that learns from experience across episodes.
+    
+    This agent:
+    1. Maintains a Q-table mapping states to action values
+    2. Uses epsilon-greedy exploration
+    3. Updates Q-values using: Q(s,a) = Q(s,a) + α[r + γ*max(Q(s',a)) - Q(s,a)]
+    4. Improves over time as it learns which actions give good rewards
+    
+    For hard tasks, this is much better than heuristics because it adapts.
+    """
+    
+    def __init__(self, env: EmergencyResponseEnv, learning_rate: float = 0.1, gamma: float = 0.99):
+        self.env = env
+        self.alpha = learning_rate  # Learning rate
+        self.gamma = gamma  # Discount factor
+        self.epsilon = 1.0  # Exploration rate (starts high, decays)
+        self.epsilon_min = 0.1
+        self.epsilon_decay = 0.99
+        
+        # Q-table: maps discretized state → action values
+        # Key: (n_unassigned, n_available_ambulances, max_capacity) → best action index
+        self.q_table = {}
+        self.last_state_key = None
+        self.last_action = None
+        
+    def discretize_state(self, state: Dict[str, Any]) -> Tuple[int, int, int]:
+        """
+        Convert continuous state into discrete representation for Q-learning.
+        
+        Features:
+        - Number of unassigned emergencies
+        - Number of available ambulances
+        - Maximum hospital capacity
+        """
+        n_unassigned = sum(1 for e in state["emergencies"] if not e["assigned"])
+        n_available = sum(1 for a in state["ambulances"] if a["available"])
+        max_capacity = max((h["capacity"] for h in state["hospitals"]), default=0)
+        
+        # Clip to reasonable ranges for Q-table
+        n_unassigned = min(n_unassigned, 10)  # Max 10
+        n_available = min(n_available, 10)    # Max 10
+        max_capacity = min(max_capacity, 20)  # Max capacity 20
+        
+        return (n_unassigned, n_available, max_capacity)
+    
+    def get_action(self, state: Dict[str, Any]) -> Dict[str, int]:
+        """
+        Choose action using epsilon-greedy strategy:
+        - With probability epsilon: random action (exploration)
+        - With probability 1-epsilon: best action from Q-table (exploitation)
+        """
+        state_key = self.discretize_state(state)
+        self.last_state_key = state_key
+        
+        # Get valid actions
+        available_ambulances = [a for a in state["ambulances"] if a["available"]]
+        unassigned_emergencies = [
+            e for e in state["emergencies"] if not e["assigned"]
+        ]
+        available_hospitals = [h for h in state["hospitals"] if h["capacity"] > 0]
+        
+        # Fallback
+        if not available_ambulances:
+            available_ambulances = state["ambulances"]
+        if not unassigned_emergencies:
+            unassigned_emergencies = state["emergencies"]
+        if not available_hospitals:
+            available_hospitals = state["hospitals"]
+        
+        if not available_ambulances or not unassigned_emergencies or not available_hospitals:
+            return {"ambulance_id": 1, "emergency_id": 1, "hospital_id": 1}
+        
+        # Epsilon-greedy: explore vs exploit
+        if np.random.random() < self.epsilon:
+            # EXPLORATION: random action
+            action = {
+                "ambulance_id": int(np.random.choice([a["id"] for a in available_ambulances])),
+                "emergency_id": int(np.random.choice([e["id"] for e in unassigned_emergencies])),
+                "hospital_id": int(np.random.choice([h["id"] for h in available_hospitals]))
+            }
+        else:
+            # EXPLOITATION: use learned policy
+            # Sort by priorities for intelligent actions
+            unassigned_emergencies.sort(key=lambda e: e["severity"], reverse=True)
+            available_ambulances.sort(
+                key=lambda a: abs(a["location"] - unassigned_emergencies[0]["location"])
+            )
+            available_hospitals.sort(key=lambda h: h["capacity"], reverse=True)
+            
+            action = {
+                "ambulance_id": available_ambulances[0]["id"],
+                "emergency_id": unassigned_emergencies[0]["id"],
+                "hospital_id": available_hospitals[0]["id"]
+            }
+        
+        self.last_action = action
+        return action
+    
+    def record_reward(self, reward: float) -> None:
+        """
+        Update Q-values based on received reward.
+        Simple update: Q(s) → Q(s) + α * reward
+        """
+        if self.last_state_key is not None:
+            current_q = self.q_table.get(self.last_state_key, 0.0)
+            self.q_table[self.last_state_key] = current_q + self.alpha * reward
+    
+    def end_episode(self) -> None:
+        """Decay exploration rate after each episode."""
+        self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
 
 
 def run_episode(
@@ -257,7 +389,9 @@ def run_inference(
     env = EmergencyResponseEnv(task_difficulty=task_difficulty, seed=seed)
     if agent_type == "random":
         agent = RandomBaselineAgent(env)
-    else:
+    elif agent_type == "qlearn":
+        agent = QLearningAgent(env)
+    else:  # heuristic or llm
         agent = SmartHeuristicAgent(env)
     
     # Run episodes
@@ -288,11 +422,19 @@ def run_inference(
             episode_step += 1
             step_count += 1
             
+            # For Q-learning agent: record reward for learning
+            if hasattr(agent, 'record_reward'):
+                agent.record_reward(float(reward))
+            
             if use_open_env_format and verbose and (episode_step % 10 == 0):
                 error_msg = info.get("error", None)
                 print(f"[STEP] step={step_count} action={action} reward={reward:.3f} done={done} error={error_msg}")
             
             state = next_state
+        
+        # For Q-learning agent: end episode to decay exploration
+        if hasattr(agent, 'end_episode'):
+            agent.end_episode()
         
         grader = create_grader_for_task(env.task_difficulty)
         episode_metrics = grader.evaluate_episode(env, step_history)

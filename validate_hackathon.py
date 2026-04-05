@@ -294,9 +294,9 @@ def check_curriculum_learning() -> Tuple[bool, str]:
 
 def main():
     """Run all validation checks."""
-    print("╔" + "═" * 58 + "╗")
-    print("║ EMERGENCY RESPONSE ENVIRONMENT - HACKATHON VALIDATION ║")
-    print("╚" + "═" * 58 + "╝")
+    print("=" * 60)
+    print("EMERGENCY RESPONSE ENVIRONMENT - HACKATHON VALIDATION")
+    print("=" * 60)
     print()
     
     checks = [

@@ -545,3 +545,15 @@ MIT License - See LICENSE file
 ---
 
 **Built for the Smart Systems Hackathon | Real-world impact through AI-driven optimization**
+
+---
+
+title: Agentic AI App
+emoji: 🤖
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_file: app.py
+pinned: false
+
+---

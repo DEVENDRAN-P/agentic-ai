@@ -17,6 +17,8 @@ import numpy as np
 from typing import Dict, List, Any, Tuple
 from .env import EmergencyResponseEnv
 from .graders import create_grader_for_task
+from collections import deque
+import hashlib
 
 
 class RandomBaselineAgent:
@@ -97,6 +99,89 @@ class SmartHeuristicAgent:
         self.steps_since_last_positive = 0
         self.bad_actions = set()  # Track bad action combinations
         self.negative_streak = 0  # Count consecutive negative rewards
+        
+        # QUICK FIX 1 & 2: Track action/state repetition for penalties
+        self.last_k_actions = deque(maxlen=5)  # Last 5 actions
+        self.visited_states = set()  # Set of visited state hashes
+        self.last_5_rewards = deque(maxlen=5)  # Last 5 rewards (QUICK FIX 3)
+        
+        # **CRITICAL FIX**: Track actions that led to bad rewards
+        self.recently_bad_actions = deque(maxlen=10)  # Last 10 attempts that gave negative reward
+        self.bad_action_penalties = {}  # Track how many times each action gave -0.40
+    
+    def mark_action_bad(self, action: Dict[str, int], reward: float):
+        """Mark an action as bad (led to penalty/low reward)."""
+        if reward <= -0.30:  # Bad threshold
+            action_tuple = (action["ambulance_id"], action["emergency_id"], action["hospital_id"])
+            self.recently_bad_actions.append(action_tuple)
+            self.bad_action_penalties[action_tuple] = self.bad_action_penalties.get(action_tuple, 0) + 1
+            if self.debug:
+                print(f"[AGENT] Marking action {action_tuple} as BAD (reward={reward:.2f}, count={self.bad_action_penalties[action_tuple]})")
+    
+    def is_action_bad(self, amb: int, emerg: int, hosp: int) -> bool:
+        """Check if this action is known to be bad."""
+        action_tuple = (amb, emerg, hosp)
+        # **CRITICAL**: Check bad_action_penalties directly, NOT the deque!
+        # The deque has maxlen=10, so old actions drop off. But we need to remember ALL bad actions!
+        penalty_count = self.bad_action_penalties.get(action_tuple, 0)
+        if penalty_count >= 1:  # 1+ failures = should ALWAYS avoid
+            return True
+        return False
+    
+    def find_safe_action(self, available_ambulances, unassigned_emergencies, available_hospitals, 
+                        greedy_action=None, max_tries=10) -> Dict[str, int]:
+        """Find an action that's not known to be bad, with multiple fallback levels."""
+        
+        # LEVEL 1: Try greedy if it's safe
+        if greedy_action and not self.is_action_bad(greedy_action["ambulance_id"], 
+                                                      greedy_action["emergency_id"], 
+                                                      greedy_action["hospital_id"]):
+            return greedy_action
+        
+        # LEVEL 2: Try random safe actions (10 attempts)
+        for _ in range(max_tries):
+            ambulance_id = int(np.random.choice([a["id"] for a in available_ambulances]))
+            emergency_id = int(np.random.choice([e["id"] for e in unassigned_emergencies]))
+            hospital_id = int(np.random.choice([h["id"] for h in available_hospitals]))
+            
+            if not self.is_action_bad(ambulance_id, emergency_id, hospital_id):
+                return {
+                    "ambulance_id": ambulance_id,
+                    "emergency_id": emergency_id,
+                    "hospital_id": hospital_id
+                }
+        
+        # LEVEL 3: No safe action found - pick something completely different from greedy
+        # Try actions that DON'T use the same emergency/ambulance/hospital as greedy
+        greedy_amb = greedy_action["ambulance_id"] if greedy_action else None
+        greedy_emerg = greedy_action["emergency_id"] if greedy_action else None
+        greedy_hosp = greedy_action["hospital_id"] if greedy_action else None
+        
+        for _ in range(max_tries):
+            ambulance_id = int(np.random.choice([a["id"] for a in available_ambulances]))
+            emergency_id = int(np.random.choice([e["id"] for e in unassigned_emergencies]))
+            hospital_id = int(np.random.choice([h["id"] for h in available_hospitals]))
+            
+            # Pick action that's different from greedy in at least 2 dimensions
+            differences = sum([
+                ambulance_id != greedy_amb,
+                emergency_id != greedy_emerg,
+                hospital_id != greedy_hosp
+            ])
+            
+            if differences >= 2:  # At least 2 components different
+                return {
+                    "ambulance_id": ambulance_id,
+                    "emergency_id": emergency_id,
+                    "hospital_id": hospital_id
+                }
+        
+        # LEVEL 4: Last resort - pick completely random
+        return {
+            "ambulance_id": int(np.random.choice([a["id"] for a in available_ambulances])),
+            "emergency_id": int(np.random.choice([e["id"] for e in unassigned_emergencies])),
+            "hospital_id": int(np.random.choice([h["id"] for h in available_hospitals]))
+        }
     
     def get_action(self, state: Dict[str, Any]) -> Dict[str, int]:
         """Generate intelligent action with aggressive loop breaking and memory."""
@@ -128,16 +213,34 @@ class SmartHeuristicAgent:
         if self.last_action is not None and self.action_repeat_count >= 1:
             if self.debug:
                 print(f"[LOOP_BREAK] Detected repeat (count={self.action_repeat_count}), forcing random")
-            # Force RANDOM action to escape immediately
-            ambulance_id = int(np.random.choice([a["id"] for a in available_ambulances]))
-            emergency_id = int(np.random.choice([e["id"] for e in unassigned_emergencies]))
-            hospital_id = int(np.random.choice([h["id"] for h in available_hospitals]))
+            # Force RANDOM action to escape immediately, but avoid recently bad ones
+            found_safe = False
+            for _ in range(5):  # Try up to 5 times to find a non-bad action
+                ambulance_id = int(np.random.choice([a["id"] for a in available_ambulances]))
+                emergency_id = int(np.random.choice([e["id"] for e in unassigned_emergencies]))
+                hospital_id = int(np.random.choice([h["id"] for h in available_hospitals]))
+                
+                # Use method, not shadowing function!
+                if not self.is_action_bad(ambulance_id, emergency_id, hospital_id):
+                    found_safe = True
+                    break
             
-            action = {
-                "ambulance_id": ambulance_id,
-                "emergency_id": emergency_id,
-                "hospital_id": hospital_id
-            }
+            # If no safe action found in 5 attempts, use find_safe_action() to ensure safety
+            if not found_safe:
+                temp_action = {
+                    "ambulance_id": ambulance_id,
+                    "emergency_id": emergency_id,
+                    "hospital_id": hospital_id
+                }
+                action = self.find_safe_action(available_ambulances, unassigned_emergencies,
+                                               available_hospitals, greedy_action=temp_action)
+            else:
+                action = {
+                    "ambulance_id": ambulance_id,
+                    "emergency_id": emergency_id,
+                    "hospital_id": hospital_id
+                }
+            
             # IMPORTANT: Reset tracking for new action
             self.action_repeat_count = 0
             self.negative_streak = 0
@@ -145,20 +248,37 @@ class SmartHeuristicAgent:
             self.bad_actions.add((ambulance_id, emergency_id, hospital_id))
             return action
         
-        # **EMERGENCY EXPLORATION**: If we're in negative streak, explore aggressively
+        # **EMERGENCY OVERRIDE**: If too many penalties, force exploration
         if self.negative_streak > 3:
             if self.debug:
                 print(f"[EMERGENCY] Negative streak={self.negative_streak}, forcing exploration")
-            # Force exploration to break out of penalty spiral
-            ambulance_id = int(np.random.choice([a["id"] for a in available_ambulances]))
-            emergency_id = int(np.random.choice([e["id"] for e in unassigned_emergencies]))
-            hospital_id = int(np.random.choice([h["id"] for h in available_hospitals]))
+            # Force exploration to break out of penalty spiral - but avoid known-bad actions
+            found_safe = False
+            for _ in range(10):  # Try up to 10 times to find a non-bad action
+                ambulance_id = int(np.random.choice([a["id"] for a in available_ambulances]))
+                emergency_id = int(np.random.choice([e["id"] for e in unassigned_emergencies]))
+                hospital_id = int(np.random.choice([h["id"] for h in available_hospitals]))
+                
+                if not self.is_action_bad(ambulance_id, emergency_id, hospital_id):
+                    found_safe = True
+                    break  # Found a safe one!
             
-            action = {
-                "ambulance_id": ambulance_id,
-                "emergency_id": emergency_id,
-                "hospital_id": hospital_id
-            }
+            # If no safe action found in 10 attempts, use find_safe_action() to ensure safety
+            if not found_safe:
+                temp_action = {
+                    "ambulance_id": ambulance_id,
+                    "emergency_id": emergency_id,
+                    "hospital_id": hospital_id
+                }
+                action = self.find_safe_action(available_ambulances, unassigned_emergencies,
+                                               available_hospitals, greedy_action=temp_action)
+            else:
+                action = {
+                    "ambulance_id": ambulance_id,
+                    "emergency_id": emergency_id,
+                    "hospital_id": hospital_id
+                }
+            
             # Track this action
             if action == self.last_action:
                 self.action_repeat_count += 1
@@ -169,16 +289,33 @@ class SmartHeuristicAgent:
         
         # **STANDARD EXPLORATION**: 50% random during hard task to find better paths
         if np.random.random() < self.exploration_rate:
-            # EXPLORATION: random action
-            ambulance_id = int(np.random.choice([a["id"] for a in available_ambulances]))
-            emergency_id = int(np.random.choice([e["id"] for e in unassigned_emergencies]))
-            hospital_id = int(np.random.choice([h["id"] for h in available_hospitals]))
+            # EXPLORATION: random action - but avoid recently bad ones!
+            found_safe = False
+            for _ in range(10):  # Try up to 10 times to find a non-bad action
+                ambulance_id = int(np.random.choice([a["id"] for a in available_ambulances]))
+                emergency_id = int(np.random.choice([e["id"] for e in unassigned_emergencies]))
+                hospital_id = int(np.random.choice([h["id"] for h in available_hospitals]))
+                
+                if not self.is_action_bad(ambulance_id, emergency_id, hospital_id):
+                    found_safe = True
+                    break  # Found a good one!
             
-            action = {
-                "ambulance_id": ambulance_id,
-                "emergency_id": emergency_id,
-                "hospital_id": hospital_id
-            }
+            # If no safe action found in 10 attempts, use find_safe_action() to ensure safety
+            if not found_safe:
+                temp_action = {
+                    "ambulance_id": ambulance_id,
+                    "emergency_id": emergency_id,
+                    "hospital_id": hospital_id
+                }
+                action = self.find_safe_action(available_ambulances, unassigned_emergencies,
+                                               available_hospitals, greedy_action=temp_action)
+            else:
+                action = {
+                    "ambulance_id": ambulance_id,
+                    "emergency_id": emergency_id,
+                    "hospital_id": hospital_id
+                }
+            
             # Track this new action
             if action == self.last_action:
                 self.action_repeat_count += 1
@@ -201,11 +338,18 @@ class SmartHeuristicAgent:
             key=lambda h: h["capacity"]
         )
         
-        action = {
+        greedy_action = {
             "ambulance_id": closest_ambulance["id"],
             "emergency_id": target_emergency["id"],
             "hospital_id": best_hospital["id"]
         }
+        
+        # **CRITICAL FIX**: Validate greedy action isn't bad, else find safe alternative
+        action = self.find_safe_action(available_ambulances, unassigned_emergencies, 
+                                       available_hospitals, greedy_action=greedy_action)
+        
+        if self.debug and action != greedy_action:
+            print(f"[AGENT] Replaced bad greedy action {greedy_action} with {action}")
         
         # Track repetition PROPERLY
         if action == self.last_action:
@@ -228,6 +372,9 @@ class SmartHeuristicAgent:
     
     def record_reward(self, reward: float) -> None:
         """Track reward for learning and negative streak detection."""
+        # QUICK FIX 3: Track last 5 rewards for bad streak detection
+        self.last_5_rewards.append(reward)
+        
         if reward > 0:
             self.steps_since_last_positive = 0
             self.negative_streak = 0
@@ -235,7 +382,7 @@ class SmartHeuristicAgent:
             self.negative_streak += 1
         
         if self.debug:
-            print(f"[REWARD] {reward:+.2f} | neg_streak={self.negative_streak}")
+            print(f"[REWARD] {reward:+.2f} | neg_streak={self.negative_streak} | last_5={list(self.last_5_rewards)}")
 
 
 class QLearningAgent:
@@ -407,7 +554,11 @@ def run_inference(
     seed: int = None
 ) -> Dict[str, Any]:
     """
-    Run inference experiments.
+    Run inference experiments with quick fixes:
+    1. Repetition penalty: -0.2 if action appears in last 5
+    2. State-visit penalty: -0.3 if state was visited before
+    3. Early stop on bad streak: terminate if 4+ of last 5 rewards are -0.40
+    4. Success condition: done AND total_reward > 0.5 threshold
     
     Args:
         task_difficulty: "easy", "medium", or "hard"
@@ -420,6 +571,15 @@ def run_inference(
     Returns:
         Results summary
     """
+    def hash_state(state: Dict[str, Any]) -> str:
+        """Create a hash of the current state."""
+        state_str = str(sorted([
+            (e["id"], e["assigned"]) for e in state["emergencies"]
+        ]) + sorted([
+            (a["id"], a["available"]) for a in state["ambulances"]
+        ]))
+        return hashlib.md5(state_str.encode()).hexdigest()
+    
     if use_open_env_format:
         print(f"[START] task={task_difficulty} env=emergency-response-env model={agent_type} episodes={num_episodes}")
     else:
@@ -448,6 +608,13 @@ def run_inference(
         state = env.reset()
         total_reward = 0.0
         step_history = []
+        bad_streak_detected = False
+        
+        # Reset tracking for this episode
+        if hasattr(agent, 'last_k_actions'):
+            agent.last_k_actions.clear()
+        if hasattr(agent, 'visited_states'):
+            agent.visited_states.clear()
         
         done = False
         episode_step = 0
@@ -458,15 +625,47 @@ def run_inference(
             # Environment executes action
             next_state, reward, done, info = env.step(action)
             
+            # **CRITICAL: Tell agent this action was bad (if it was)**
+            # This teaches the agent to avoid repeating it
+            if hasattr(agent, 'mark_action_bad') and reward <= -0.30:
+                agent.mark_action_bad(action, reward)
+            
+            # **QUICK FIX 1: Repetition penalty** - penalize if action repeated
+            action_tuple = (action["ambulance_id"], action["emergency_id"], action["hospital_id"])
+            if hasattr(agent, 'last_k_actions'):
+                if action_tuple in agent.last_k_actions:
+                    reward -= 0.2  # Penalize repetition
+                    if verbose and agent.debug:
+                        print(f"[FIX1] Repetition penalty applied: {reward:.3f}")
+                agent.last_k_actions.append(action_tuple)
+            
+            # **QUICK FIX 2: State-visit penalty** - penalize if state revisited
+            if hasattr(agent, 'visited_states'):
+                state_hash = hash_state(state)
+                if state_hash in agent.visited_states:
+                    reward -= 0.3  # Penalize state revisit
+                    if verbose and agent.debug:
+                        print(f"[FIX2] State-visit penalty applied: {reward:.3f}")
+                agent.visited_states.add(state_hash)
+            
             # Track history
             step_history.append((state, action, reward, done))
             total_reward += reward
             episode_step += 1
             step_count += 1
             
-            # For Q-learning agent: record reward for learning
+            # For agent: record reward for learning
             if hasattr(agent, 'record_reward'):
                 agent.record_reward(float(reward))
+            
+            # **QUICK FIX 3: Early stop on bad streak** - check if 4+ of last 5 rewards are -0.40
+            if hasattr(agent, 'last_5_rewards') and len(agent.last_5_rewards) >= 5:
+                bad_count = sum(1 for r in agent.last_5_rewards if r <= -0.40)
+                if bad_count >= 4:
+                    bad_streak_detected = True
+                    if verbose and agent.debug:
+                        print(f"[FIX3] Bad streak detected ({bad_count}/5): terminating episode")
+                    done = True
             
             if use_open_env_format and verbose and (episode_step % 10 == 0):
                 error_msg = info.get("error", None)
@@ -481,11 +680,16 @@ def run_inference(
         grader = create_grader_for_task(env.task_difficulty)
         episode_metrics = grader.evaluate_episode(env, step_history)
         
+        # **QUICK FIX 4: Tighten success condition**
+        # Success requires: episode completed AND total_reward > 0.5 threshold
+        episode_success = (not bad_streak_detected and episode_metrics["final_score"] > 0.5)
+        
         episode_results.append({
             "episode": episode + 1,
             "total_reward": total_reward,
             "metrics": episode_metrics,
-            "steps": episode_step
+            "steps": episode_step,
+            "success": episode_success  # Track per-episode success
         })
         total_rewards.append(total_reward)
     
@@ -511,9 +715,15 @@ def run_inference(
         }
     }
     
+    # **QUICK FIX 4: Calculate overall success**
+    # Overall success = all episodes meet criteria (done AND score > 0.5)
+    num_successful = sum(1 for e in episode_results if e.get("success", False))
+    overall_success = num_successful == num_episodes
+    
     if use_open_env_format:
         rewards_str = ",".join(f"{r:.2f}" for r in total_rewards)
-        print(f"[END] success=true episodes={num_episodes} avg_score={summary['statistics']['final_score']['mean']:.3f} rewards={rewards_str}")
+        success_str = "true" if overall_success else "false"
+        print(f"[END] success={success_str} episodes={num_episodes} successful={num_successful} avg_score={summary['statistics']['final_score']['mean']:.3f} rewards={rewards_str}")
     else:
         print("\n" + "=" * 60)
         print("SUMMARY")
@@ -521,8 +731,10 @@ def run_inference(
         print(f"Task: {task_difficulty}")
         print(f"Agent: {agent_type}")
         print(f"Episodes: {num_episodes}")
+        print(f"Successful Episodes: {num_successful}/{num_episodes}")
         print(f"Average Score: {summary['statistics']['final_score']['mean']:.3f} ± {summary['statistics']['final_score']['std']:.3f}")
         print(f"Score Range: [{summary['statistics']['final_score']['min']:.3f}, {summary['statistics']['final_score']['max']:.3f}]")
+        print(f"Status: {'✅ PASS' if overall_success else '⚠️ PARTIAL'}")
     
     return summary
 

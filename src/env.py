@@ -119,6 +119,10 @@ class EmergencyResponseEnv:
         self.episode_history = []
         self.current_episode_stats = {}
         
+        # Track consecutive invalid actions for early termination
+        self.consecutive_invalid_actions = 0
+        self.max_consecutive_invalid = 10
+        
         # Initialize state
         self.reset()
     
@@ -141,7 +145,7 @@ class EmergencyResponseEnv:
             self.initial_busy_ambulances = 4
             self.hospital_capacity = 2
             self.traffic_factor = 2.0
-            self.emergency_spawn_rate = 0.2
+            self.emergency_spawn_rate = 0.05  # Reduced from 0.2 to prevent overwhelming the system
         
         self.num_ambulances = 6
         self.num_hospitals = 3
@@ -158,6 +162,7 @@ class EmergencyResponseEnv:
         self.total_response_time = 0
         self.high_severity_handled = 0
         self.total_high_severity = 0
+        self.consecutive_invalid_actions = 0
         
         # Initialize emergencies
         self.emergencies = []
@@ -269,15 +274,19 @@ class EmergencyResponseEnv:
         if valid_action:
             # Execute assignment
             reward = self._execute_assignment(ambulance_id, emergency_id, hospital_id)
+            self.consecutive_invalid_actions = 0  # Reset counter on valid action
         else:
             # Penalty for invalid action
             reward = -0.4
+            self.consecutive_invalid_actions += 1
         
         # Update environment state
         self._update_environment()
         
         # Check if episode is done
-        done = self.step_count >= self.max_steps or self._all_emergencies_handled()
+        done = (self.step_count >= self.max_steps or 
+                self._all_emergencies_handled() or
+                self.consecutive_invalid_actions >= self.max_consecutive_invalid)
         
         # Compile info
         info = {

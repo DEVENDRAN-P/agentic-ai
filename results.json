@@ -5,25 +5,25 @@
   "episodes": [
     {
       "episode": 1,
-      "reward": -33.74999999999995,
-      "score": 0.18279411764705883,
+      "reward": -35.79999999999994,
+      "score": 0.1652941176470588,
       "steps": 100,
       "metrics": {
         "priority_handling": 0.0,
-        "response_speed": 0.825,
+        "response_speed": 0.7666666666666666,
         "resource_usage": 1.0,
-        "final_score": 0.18279411764705883
+        "final_score": 0.1652941176470588
       }
     }
   ],
   "statistics": {
-    "avg_score": 0.18279411764705883,
-    "avg_reward": -33.74999999999995,
+    "avg_score": 0.1652941176470588,
+    "avg_reward": -35.79999999999994,
     "final_scores": [
-      0.18279411764705883
+      0.1652941176470588
     ],
-    "rewards": [
-      -33.74999999999995
+    "episode_rewards": [
+      -35.79999999999994
     ]
   }
 }

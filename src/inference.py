@@ -75,51 +75,86 @@ class RandomBaselineAgent:
 
 class SmartHeuristicAgent:
     """
-    Heuristic-based agent using simple prioritization rules.
+    Heuristic-based agent with aggressive loop detection and exploration.
     
-    Decision rules:
-    1. Always assign highest-severity unassigned emergency first
-    2. Choose closest available ambulance
-    3. Choose hospital with most available capacity
+    Key features:
+    1. Aggressive Loop Breaking: If any action repeats 2+ times → change
+    2. Strong Exploration: 30% random to escape dead-ends in hard tasks
+    
+    This prevents the agent from getting stuck in penalty spirals.
     """
     
     def __init__(self, env: EmergencyResponseEnv):
         self.env = env
+        self.last_action = None
+        self.action_repeat_count = 0
+        self.exploration_rate = 0.5  # 50% exploration (very high for hard tasks)
+        self.steps_since_last_positive = 0
     
     def get_action(self, state: Dict[str, Any]) -> Dict[str, int]:
-        """Generate intelligent action based on priorities."""
-        # Get available ambulances
+        """Generate intelligent action with aggressive loop breaking."""
+        # Get available resources
         available_ambulances = [a for a in state["ambulances"] if a["available"]]
-        
-        # Get unassigned emergencies, sorted by severity (highest first)
         unassigned_emergencies = [
             e for e in state["emergencies"] if not e["assigned"]
         ]
         unassigned_emergencies.sort(key=lambda e: e["severity"], reverse=True)
-        
-        # Get hospitals with capacity, sorted by most available
         available_hospitals = [h for h in state["hospitals"] if h["capacity"] > 0]
         available_hospitals.sort(key=lambda h: h["capacity"], reverse=True)
         
-        # If no valid options, return dummy action
-        if not available_ambulances or not unassigned_emergencies or not available_hospitals:
-            return {
-                "ambulance_id": 1,
-                "emergency_id": 1,
-                "hospital_id": 1
-            }
+        # Fallback options
+        if not available_ambulances:
+            available_ambulances = state["ambulances"]
+        if not unassigned_emergencies:
+            unassigned_emergencies = state["emergencies"]
+        if not available_hospitals:
+            available_hospitals = state["hospitals"]
         
-        # Select highest-severity emergency
+        # Safety
+        if not available_ambulances or not unassigned_emergencies or not available_hospitals:
+            return {"ambulance_id": 1, "emergency_id": 1, "hospital_id": 1}
+        
+        # **AGGRESSIVE LOOP BREAKING**: If same action repeats 2+ times, force change
+        if self.last_action is not None and self.action_repeat_count >= 2:
+            # Force random action to escape
+            action = {
+                "ambulance_id": int(np.random.choice([a["id"] for a in available_ambulances])),
+                "emergency_id": int(np.random.choice([e["id"] for e in unassigned_emergencies])),
+                "hospital_id": int(np.random.choice([h["id"] for h in available_hospitals]))
+            }
+            # IMPORTANT: Reset tracking for new action
+            self.action_repeat_count = 0
+            self.steps_since_last_positive = 0
+            self.last_action = action
+            return action
+        
+        # **EXPLORATION**: 30% random to find better paths
+        if np.random.random() < self.exploration_rate:
+            action = {
+                "ambulance_id": int(np.random.choice([a["id"] for a in available_ambulances])),
+                "emergency_id": int(np.random.choice([e["id"] for e in unassigned_emergencies])),
+                "hospital_id": int(np.random.choice([h["id"] for h in available_hospitals]))
+            }
+            # Track this new action
+            if action == self.last_action:
+                self.action_repeat_count += 1
+            else:
+                self.action_repeat_count = 0
+                self.last_action = action
+            return action
+        
+        # **GREEDY** (70% of time): highest severity + closest ambulance + best hospital
         target_emergency = unassigned_emergencies[0]
         
-        # Select closest ambulance to the emergency location
         closest_ambulance = min(
             available_ambulances,
             key=lambda a: abs(a["location"] - target_emergency["location"])
         )
         
-        # Select hospital with most capacity
-        best_hospital = available_hospitals[0]
+        best_hospital = max(
+            available_hospitals,
+            key=lambda h: h["capacity"]
+        )
         
         action = {
             "ambulance_id": closest_ambulance["id"],
@@ -127,7 +162,20 @@ class SmartHeuristicAgent:
             "hospital_id": best_hospital["id"]
         }
         
+        # Track repetition PROPERLY
+        if action == self.last_action:
+            self.action_repeat_count += 1
+        else:
+            self.action_repeat_count = 0
+        
+        self.last_action = action
+        self.steps_since_last_positive += 1
         return action
+    
+    def record_reward(self, reward: float) -> None:
+        """Optional reward tracking."""
+        if reward > 0:
+            self.steps_since_last_positive = 0
 
 
 def run_episode(

@@ -31,26 +31,32 @@ from src.env import EmergencyResponseEnv
 from src.graders import create_grader_for_task
 from src.inference import RandomBaselineAgent, SmartHeuristicAgent
 
-# Environment variables for OpenAI
+# Environment variables for OpenAI (per hackathon requirements)
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
 MODEL_NAME = os.getenv("MODEL_NAME", "gpt-3.5-turbo")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+HF_TOKEN = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
+OPENAI_API_KEY = HF_TOKEN
+
+# Inference parameters
+SUCCESS_SCORE_THRESHOLD = 0.1  # normalized score in [0, 1]
 
 
-def log_start(task: str, env: str, model: str, episodes: int) -> None:
-    """Emit [START] log - EXACT FORMAT"""
-    print(f"[START] task={task} env={env} model={model} episodes={episodes}", flush=True)
+def log_start(task: str, env: str, model: str) -> None:
+    """Emit [START] log - EXACT FORMAT per hackathon requirements"""
+    print(f"[START] task={task} env={env} model={model}", flush=True)
 
 
-def log_step(episode: int, step: int, action: str, reward: float) -> None:
-    """Emit [STEP] log - EXACT FORMAT (includes episode number)"""
-    print(f"[STEP] episode={episode} step={step} action={action} reward={reward:.3f}", flush=True)
+def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str] = None) -> None:
+    """Emit [STEP] log - EXACT FORMAT per hackathon requirements"""
+    error_val = error if error else "null"
+    done_val = str(done).lower()
+    print(f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}", flush=True)
 
 
-def log_end(success: bool, episodes: int, avg_score: float, rewards: List[float]) -> None:
-    """Emit [END] log - EXACT FORMAT"""
+def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
+    """Emit [END] log - EXACT FORMAT per hackathon requirements"""
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
-    print(f"[END] success={str(success).lower()} episodes={episodes} avg_score={avg_score:.3f} rewards={rewards_str}", flush=True)
+    print(f"[END] success={str(success).lower()} steps={steps} score={score:.2f} rewards={rewards_str}", flush=True)
 
 
 
@@ -133,10 +139,6 @@ def run_inference(
     random.seed(seed)
     np.random.seed(seed)
     
-    # Log start
-    model_name = MODEL_NAME if agent_type == "llm" else agent_type
-    log_start(task=task_difficulty, env="emergency-response-env", model=model_name, episodes=num_episodes)
-    
     # Create environment
     env = EmergencyResponseEnv(task_difficulty=task_difficulty)
     
@@ -150,56 +152,81 @@ def run_inference(
     
     # Run episodes
     episode_results = []
-    episode_rewards = []
-    all_rewards_flat = []
-    global_step = 0
+    all_episode_rewards = []
+    
+    # model_name for logging
+    model_name = MODEL_NAME if agent_type == "llm" else agent_type
     
     for episode_num in range(1, num_episodes + 1):
+        # Log start for THIS episode
+        log_start(task=task_difficulty, env="emergency-response-env", model=model_name)
+        
         state = env.reset()
         episode_reward = 0.0
         step_history = []
         episode_step = 0
+        step_rewards = []  # Per-episode step rewards for logging
         done = False
+        stuck_counter = 0  # Track repeated bad actions
+        last_action = None
         
         while not done:
             episode_step += 1
-            global_step += 1
             
             # Agent decides
             action = agent.get_action(state)
             
-            # Environment executes
-            next_state, reward, done, info = env.step(action)
+            # Detect stuck behavior - same action repeated with negative reward
+            if action == last_action and (episode_step > 1 and step_rewards[-1] < -0.2):
+                stuck_counter += 1
+            else:
+                stuck_counter = 0
+            
+            # Early termination if stuck for too long (more than 3 repeated bad actions)
+            if stuck_counter > 3:
+                done = True
+                reward = 0.0  # No reward for forced termination
+            else:
+                # Environment executes
+                next_state, reward, done, info = env.step(action)
+                state = next_state
+            
+            # Record reward for agent's loop detection (if agent supports it)
+            if hasattr(agent, 'record_reward'):
+                agent.record_reward(float(reward))
+            
             step_history.append((state, action, reward, done))
             episode_reward += reward
-            all_rewards_flat.append(reward)
             
-            # Log step (MUST include episode number)
+            # Log step (per hackathon format) - use episode_step, not global
             action_str = f"({action.get('ambulance_id', 0)},{action.get('emergency_id', 0)},{action.get('hospital_id', 0)})"
-            log_step(episode=episode_num, step=episode_step, action=action_str, reward=float(reward))
+            log_step(step=episode_step, action=action_str, reward=float(reward), done=done, error=None)
+            step_rewards.append(float(reward))
             
-            state = next_state
+            last_action = action
         
         # Grade episode using deterministic grader
         grader = create_grader_for_task(task_difficulty)
         episode_metrics = grader.evaluate_episode(env, step_history)
+        episode_score = float(episode_metrics.get("final_score", 0.0))
+        
+        # Emit [END] for this episode
+        success = episode_score >= SUCCESS_SCORE_THRESHOLD
+        log_end(success=success, steps=episode_step, score=episode_score, rewards=step_rewards)
         
         episode_results.append({
             "episode": episode_num,
             "reward": float(episode_reward),
-            "score": float(episode_metrics.get("final_score", 0.0)),
+            "score": episode_score,
             "steps": episode_step,
             "metrics": episode_metrics
         })
         
-        episode_rewards.append(float(episode_reward))
+        all_episode_rewards.append(float(episode_reward))
     
-    # Calculate statistics
+    # Calculate statistics for summary
     final_scores = [e["score"] for e in episode_results]
     avg_score = float(np.mean(final_scores)) if final_scores else 0.0
-    
-    # Log end (STRICT FORMAT)
-    log_end(success=True, episodes=num_episodes, avg_score=avg_score, rewards=episode_rewards)
     
     return {
         "task_difficulty": task_difficulty,
@@ -208,9 +235,9 @@ def run_inference(
         "episodes": episode_results,
         "statistics": {
             "avg_score": avg_score,
-            "avg_reward": float(np.mean(episode_rewards)) if episode_rewards else 0.0,
+            "avg_reward": float(np.mean(all_episode_rewards)) if all_episode_rewards else 0.0,
             "final_scores": final_scores,
-            "rewards": episode_rewards
+            "episode_rewards": all_episode_rewards
         }
     }
 

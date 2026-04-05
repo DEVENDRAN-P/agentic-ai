@@ -1,28 +1,84 @@
 {
   "task_difficulty": "hard",
-  "agent_type": "qlearn",
-  "num_episodes": 1,
+  "agent_type": "heuristic",
+  "num_episodes": 5,
   "episodes": [
     {
       "episode": 1,
-      "reward": -36.64999999999994,
-      "score": 0.1690441176470588,
+      "reward": -35.79999999999994,
+      "score": 0.1652941176470588,
       "steps": 100,
       "metrics": {
         "priority_handling": 0.0,
-        "response_speed": 0.7791666666666667,
+        "response_speed": 0.7666666666666666,
         "resource_usage": 1.0,
-        "final_score": 0.1690441176470588
+        "final_score": 0.1652941176470588
+      }
+    },
+    {
+      "episode": 2,
+      "reward": -35.099999999999945,
+      "score": 0.1903571428571429,
+      "steps": 100,
+      "metrics": {
+        "priority_handling": 0.0,
+        "response_speed": 0.825,
+        "resource_usage": 1.0,
+        "final_score": 0.1903571428571429
+      }
+    },
+    {
+      "episode": 3,
+      "reward": -35.39999999999994,
+      "score": 0.18694444444444447,
+      "steps": 100,
+      "metrics": {
+        "priority_handling": 0.0,
+        "response_speed": 0.8083333333333333,
+        "resource_usage": 1.0,
+        "final_score": 0.18694444444444447
+      }
+    },
+    {
+      "episode": 4,
+      "reward": -34.64999999999995,
+      "score": 0.16875,
+      "steps": 100,
+      "metrics": {
+        "priority_handling": 0.0,
+        "response_speed": 0.7708333333333334,
+        "resource_usage": 1.0,
+        "final_score": 0.16875
+      }
+    },
+    {
+      "episode": 5,
+      "reward": -36.64999999999994,
+      "score": 0.1887096774193548,
+      "steps": 100,
+      "metrics": {
+        "priority_handling": 0.0,
+        "response_speed": 0.8333333333333333,
+        "resource_usage": 1.0,
+        "final_score": 0.1887096774193548
       }
     }
   ],
   "statistics": {
-    "avg_score": 0.1690441176470588,
-    "avg_reward": -36.64999999999994,
+    "avg_score": 0.1800110764736002,
+    "avg_reward": -35.519999999999946,
     "final_scores": [
-      0.1690441176470588
+      0.1652941176470588,
+      0.1903571428571429,
+      0.18694444444444447,
+      0.16875,
+      0.1887096774193548
     ],
     "episode_rewards": [
+      -35.79999999999994,
+      -35.099999999999945,
+      -35.39999999999994,
+      -34.64999999999995,
       -36.64999999999994
     ]
   }

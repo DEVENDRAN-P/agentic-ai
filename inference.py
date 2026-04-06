@@ -38,54 +38,52 @@ HF_TOKEN = os.getenv("HF_TOKEN") or os.getenv("API_KEY")
 OPENAI_API_KEY = HF_TOKEN
 
 # Inference parameters
-SUCCESS_SCORE_THRESHOLD = 0.1  # normalized score in [0, 1]
+# FIXED: More realistic success thresholds
+# Success = handled 60% of emergencies AND score >= 0.5
+# This is achievable but requires good performance
+SUCCESS_EMERGENCIES_HANDLED = 0.6  # 60% of emergencies handled
+SUCCESS_SCORE_THRESHOLD = 0.5  # Score threshold (reduced from 0.7 to be more achievable)
 
 
 def log_start(task: str, env: str, model: str) -> None:
-    """Emit [START] log - EXACT FORMAT per hackathon requirements"""
+    """Emit [START] log - EXACT FORMAT per hackathon requirements
+    
+    Format: [START] task=<task_name> env=<benchmark> model=<model_name>
+    """
     print(f"[START] task={task} env={env} model={model}", flush=True)
 
 
 def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str] = None) -> None:
     """Emit [STEP] log - EXACT FORMAT per hackathon requirements
     
-    CRITICAL FIX: Handle negative rewards gracefully in step logs
-    - Negative rewards indicate invalid actions (resource not available, etc.)
-    - Report as 0.0 instead to avoid making the solution look broken
-    - Agent still learns from penalties internally
+    Format: [STEP] step=<n> action=<action_str> reward=<0.00> done=<true|false> error=<msg|null>
+    
+    Rules:
+    - reward formatted to 2 decimal places
+    - done and error are lowercase booleans/null
+    - All fields on single line with no newlines
     """
     error_val = error if error else "null"
     done_val = str(done).lower()
     
-    # **CRITICAL**: Clamp negative rewards to 0.0 for display
-    # This shows judges valid steps even if they tried illegal actions
-    display_reward = max(0.0, reward)
-    
-    print(f"[STEP] step={step} action={action} reward={display_reward:.2f} done={done_val} error={error_val}", flush=True)
+    print(f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}", flush=True)
 
 
 def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
     """Emit [END] log - EXACT FORMAT per hackathon requirements
     
-    CRITICAL FIX: Handle negative rewards gracefully
-    - Don't report negative values that make submission look bad
-    - Instead: Report only valid positive actions OR clamp negatives to 0.0
-    - This prevents disqualification due to "appearing to fail"
+    Format: [END] success=<true|false> steps=<n> score=<score> rewards=<r1,r2,...,rn>
+    
+    Rules:
+    - success is lowercase boolean
+    - score formatted to 2 decimal places
+    - rewards formatted to 2 decimal places, comma-separated
+    - Always emitted (even on exception)
     """
-    # FILTER 1: Remove extreme negative penalties (which are just retry noise)
-    # Keep positive rewards and treat invalid actions as 0.0 instead of -0.40
-    filtered_rewards = []
-    for r in rewards:
-        if r >= 0.0:
-            filtered_rewards.append(r)
-        else:
-            # Convert negative (invalid action) to 0.0 - still counts as step but not a failure
-            filtered_rewards.append(0.0)
+    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    success_val = str(success).lower()
     
-    # Format: Show only the cleaned rewards
-    rewards_str = ",".join(f"{r:.2f}" for r in filtered_rewards)
-    
-    print(f"[END] success={str(success).lower()} steps={steps} score={score:.2f} rewards={rewards_str}", flush=True)
+    print(f"[END] success={success_val} steps={steps} score={score:.2f} rewards={rewards_str}", flush=True)
 
 
 
@@ -209,16 +207,22 @@ def run_inference(
             # Agent decides
             action = agent.get_action(state)
             
-            # Detect stuck behavior - same action repeated with negative reward
-            if action == last_action and (episode_step > 1 and step_rewards[-1] < -0.2):
-                stuck_counter += 1
+            # IMPROVED STUCK DETECTION: Track repeated bad actions more aggressively
+            # Compare to last action AND check if reward was negative
+            if action == last_action and len(step_rewards) > 0:
+                # If repeating same action and last reward was bad, it's major issue
+                if step_rewards[-1] <= -0.1:
+                    stuck_counter += 1
+                else:
+                    stuck_counter = 0  # Reset if last action had good reward
             else:
                 stuck_counter = 0
             
-            # Early termination if stuck for too long (more than 3 repeated bad actions)
-            if stuck_counter > 3:
+            # Early termination if stuck for too long (more than 2 repeated bad actions)
+            # This is more aggressive than before to stop bad behavior early
+            if stuck_counter >= 3:
                 done = True
-                reward = 0.0  # No reward for forced termination
+                reward = -0.5  # Penalty for getting stuck
             else:
                 # Environment executes
                 next_state, reward, done, info = env.step(action)
@@ -229,7 +233,7 @@ def run_inference(
                 agent.record_reward(float(reward))
             
             # **CRITICAL**: Mark action as bad so agent learns to avoid it
-            if hasattr(agent, 'mark_action_bad') and reward <= -0.30:
+            if hasattr(agent, 'mark_action_bad') and reward <= -0.10:
                 agent.mark_action_bad(action, reward)
             
             step_history.append((state, action, reward, done))
@@ -247,18 +251,27 @@ def run_inference(
         episode_metrics = grader.evaluate_episode(env, step_history)
         episode_score = float(episode_metrics.get("final_score", 0.0))
         
+        # Calculate percentage of emergencies handled
+        emergencies_handled = grader.calculate_emergencies_handled(env)
+        
+        # SUCCESS CONDITION: Both criteria must be met
+        # 1. At least 60% of emergencies handled
+        # 2. Score >= 0.5 (meaningful performance)
+        success = (emergencies_handled >= SUCCESS_EMERGENCIES_HANDLED and 
+                   episode_score >= SUCCESS_SCORE_THRESHOLD)
+        
         # For Q-learning agent: end episode to decay exploration
         if hasattr(agent, 'end_episode'):
             agent.end_episode()
         
         # Emit [END] for this episode
-        success = episode_score >= SUCCESS_SCORE_THRESHOLD
         log_end(success=success, steps=episode_step, score=episode_score, rewards=step_rewards)
         
         episode_results.append({
             "episode": episode_num,
             "reward": float(episode_reward),
             "score": episode_score,
+            "emergencies_handled": float(emergencies_handled),
             "steps": episode_step,
             "metrics": episode_metrics
         })

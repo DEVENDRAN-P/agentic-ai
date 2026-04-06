@@ -53,6 +53,10 @@ class EmergencyResponseGrader:
             "resource_usage": self._calculate_resource_usage(env, step_history),
         }
         
+        # Calculate step reward quality as a penalty factor
+        # If agent gets many negative rewards, score should reflect it
+        reward_quality = self._calculate_reward_quality(step_history)
+        
         # Calculate final score (weighted combination)
         stats["final_score"] = (
             0.5 * stats["priority_handling"] +
@@ -60,8 +64,15 @@ class EmergencyResponseGrader:
             0.2 * stats["resource_usage"]
         )
         
+        # APPLY REWARD QUALITY PENALTY
+        # If agent got many negative rewards, penalize the score
+        stats["final_score"] *= reward_quality
+        
         # Clamp to [0, 1]
         stats["final_score"] = max(0.0, min(1.0, stats["final_score"]))
+        
+        # Track reward quality for debugging
+        stats["reward_quality"] = reward_quality
         
         self.episode_stats.append(stats)
         return stats
@@ -154,6 +165,54 @@ class EmergencyResponseGrader:
         # Combined resource score
         resource_score = 0.6 * ambulance_utilization + 0.4 * balance_score
         return max(0.0, min(1.0, resource_score))
+    
+    def _calculate_reward_quality(self, step_history: List[Tuple]) -> float:
+        """
+        Calculate reward quality penalty.
+        
+        If agent gets many invalid actions with negative rewards,
+        the episode score should be penalized accordingly.
+        
+        Returns:
+            Quality multiplier in [0.0, 1.0]
+            - 1.0 = good quality (mostly positive rewards)
+            - 0.5 = poor quality (many negative rewards)
+            - 0.0 = very poor (mostly negative)
+        
+        This prevents inflated scores when agent makes many invalid actions.
+        """
+        if not step_history:
+            return 1.0
+        
+        # Extract rewards from step history (3rd element of each tuple)
+        rewards = [float(step[2]) for step in step_history]
+        
+        # Count negative rewards
+        negative_count = sum(1 for r in rewards if r < 0)
+        total_steps = len(rewards)
+        
+        negative_rate = negative_count / total_steps if total_steps > 0 else 0
+        
+        # If more than 50% of steps are negative, apply penalty
+        # REDUCED penalty from 0.7 to 0.5 - less harsh
+        reward_quality = 1.0 - (negative_rate * 0.5)
+        
+        return max(0.5, min(1.0, reward_quality))
+    
+    def calculate_emergencies_handled(self, env: EmergencyResponseEnv) -> float:
+        """
+        Calculate percentage of emergencies that were handled.
+        
+        Returns:
+            Fraction in [0.0, 1.0]
+            - 1.0 = all emergencies handled
+            - 0.6 = 60% of emergencies handled (success threshold)
+            - 0.0 = no emergencies handled
+        """
+        total_emergencies = len(env.emergencies)
+        handled = sum(1 for e in env.emergencies if e["assigned_ambulance"] is not None)
+        
+        return handled / total_emergencies if total_emergencies > 0 else 0.0
     
     def get_summary(self) -> Dict[str, Any]:
         """Get summary of all evaluated episodes."""

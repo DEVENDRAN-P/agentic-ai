@@ -276,8 +276,16 @@ class EmergencyResponseEnv:
             reward = self._execute_assignment(ambulance_id, emergency_id, hospital_id)
             self.consecutive_invalid_actions = 0  # Reset counter on valid action
         else:
-            # Penalty for invalid action
-            reward = -0.4
+            # LIGHTER PENALTIES for invalid actions
+            # Agent should learn, not be destroyed
+            error_severity = validation_info.get("error_severity", "light")
+            if error_severity == "critical":
+                reward = -0.05  # Wrong ID - small penalty (agent can recover)
+            elif error_severity == "medium":
+                reward = -0.02  # Resource constraint - tiny penalty
+            else:  # light
+                reward = -0.01  # Already assigned - almost no penalty
+            
             self.consecutive_invalid_actions += 1
         
         # Update environment state
@@ -302,6 +310,7 @@ class EmergencyResponseEnv:
     def _validate_action(self, ambulance_id: int, emergency_id: int, hospital_id: int) -> Tuple[bool, Dict]:
         """
         Validate if action is legal.
+        Returns severity of error for graduated penalties.
         
         Returns:
             (is_valid, validation_info)
@@ -311,43 +320,52 @@ class EmergencyResponseEnv:
         # Check ambulance exists and is available
         if not (1 <= ambulance_id <= self.num_ambulances):
             info["ambulance_error"] = "Invalid ambulance ID"
+            info["error_severity"] = "critical"  # Wrong ID is critical
             return False, info
         
         ambulance = self.ambulances[ambulance_id - 1]
         if not ambulance["available"]:
             info["ambulance_error"] = "Ambulance not available"
+            info["error_severity"] = "medium"  # Busy ambulance is medium error
             return False, info
         
         # Check emergency exists
         if not (1 <= emergency_id <= len(self.emergencies)):
             info["emergency_error"] = "Invalid emergency ID"
+            info["error_severity"] = "critical"  # Wrong ID is critical
             return False, info
         
         emergency = self.emergencies[emergency_id - 1]
         if emergency["assigned_ambulance"] is not None:
             info["emergency_error"] = "Emergency already assigned"
+            info["error_severity"] = "light"  # Can happen naturally, light penalty
             return False, info
         
         # Check hospital exists and has capacity
         if not (1 <= hospital_id <= self.num_hospitals):
             info["hospital_error"] = "Invalid hospital ID"
+            info["error_severity"] = "critical"  # Wrong ID is critical
             return False, info
         
         hospital = self.hospitals[hospital_id - 1]
         if hospital["current_capacity"] <= 0:
             info["hospital_error"] = "Hospital at capacity"
+            info["error_severity"] = "medium"  # Resource constraint, medium penalty
             return False, info
         
         return True, info
     
     def _execute_assignment(self, ambulance_id: int, emergency_id: int, hospital_id: int) -> float:
         """
-        Execute assignment and calculate reward.
+        Execute assignment with BALANCED reward function.
         
-        Reward Function Components:
-        - priority_handling (0.5): High-severity cases get priority
-        - response_speed (0.3): Quick response reduces penalties
-        - resource_usage (0.2): Efficient ambulance/hospital use
+        Design: Positive reinforcement for valid moves + bonuses for quality
+        
+        Base: +0.2 for every valid assignment (encouragement)
+        Quality bonus: up to +0.6 more based on priority/response/efficiency
+        Penalties: only for truly suboptimal choices
+        
+        Range: -0.3 (very bad) to +1.0 (excellent)
         
         Returns:
             Total reward for this step
@@ -356,43 +374,72 @@ class EmergencyResponseEnv:
         emergency = self.emergencies[emergency_id - 1]
         hospital = self.hospitals[hospital_id - 1]
         
+        # BASE REWARD: +0.2 for every valid assignment (positive reinforcement)
+        reward = 0.2
+        
         # Calculate travel distance and response time
         ambulance_distance = abs(ambulance["location"] - emergency["location"])
         travel_time = ambulance_distance * self.traffic_factor / 2  # Normalize by 2
         response_time = emergency["time_waiting"] + travel_time
         
-        reward = 0.0
+        # Check if there are higher-priority waiting emergencies
+        has_higher_priority_waiting = any(
+            e["severity"] > emergency["severity"] and e["assigned_ambulance"] is None
+            for e in self.emergencies
+        )
         
-        # 1. Priority Handling Reward (0.5 weight)
-        # High-severity emergencies should be handled first
-        severity_score = emergency["severity"] / 10.0  # Normalize to 0-1
-        priority_reward = severity_score * 0.5
+        # 1. PRIORITY BONUS (up to +0.4 additional)
+        # Handling high-severity emergencies first
+        if emergency["severity"] >= 8:  # HIGH severity
+            if has_higher_priority_waiting:
+                priority_bonus = -0.2  # Penalty for ignoring even higher priority
+            else:
+                priority_bonus = +0.4  # BIG bonus for handling high-severity ✅
+        elif emergency["severity"] >= 5:  # MEDIUM severity
+            if has_higher_priority_waiting:
+                priority_bonus = -0.05  # Small penalty (minor issue)
+            else:
+                priority_bonus = +0.2  # Good choice
+        else:  # LOW severity
+            if has_higher_priority_waiting:
+                priority_bonus = -0.15  # Penalty for skipping high priority
+            else:
+                priority_bonus = +0.05  # OK
         
-        # Penalty for handling low-severity when high-severity waiting
-        for e in self.emergencies:
-            if e["severity"] > emergency["severity"] and e["assigned_ambulance"] is None:
-                priority_reward -= 0.5  # Significant penalty
-                break
+        reward += priority_bonus
         
-        reward += priority_reward
+        # 2. RESPONSE SPEED BONUS (up to +0.15 additional)
+        # Faster response = better
+        if response_time <= 5:
+            speed_bonus = +0.15  # Fast! Excellent
+        elif response_time <= 10:
+            speed_bonus = +0.10  # Medium - acceptable
+        elif response_time <= 15:
+            speed_bonus = +0.02  # Slower but okay
+        else:
+            speed_bonus = -0.05  # Slow - minor penalty
         
-        # 2. Response Speed Reward (0.3 weight)
-        # Reward for fast response, penalize delays
-        speed_penalty = min(emergency["time_waiting"] * 0.05, 0.3)
-        speed_reward = 0.3 - speed_penalty
-        reward += speed_reward
+        reward += speed_bonus
         
-        # 3. Resource Usage Reward (0.2 weight)
-        # Reward for using resources efficiently
-        hospital_utilization = hospital["patients"] / hospital["max_capacity"]
-        resource_reward = (1 - hospital_utilization) * 0.2
-        reward += resource_reward
+        # 3. RESOURCE EFFICIENCY BONUS (up to +0.15 additional)
+        # Distribute load across hospitals
+        hospital_utilization = hospital["patients"] / max(hospital["max_capacity"], 1)
+        if hospital_utilization <= 0.4:
+            resource_bonus = +0.15  # Plenty of space - good choice
+        elif hospital_utilization <= 0.7:
+            resource_bonus = +0.08  # Still has room
+        elif hospital_utilization <= 0.95:
+            resource_bonus = 0.0  # Near full - neutral
+        else:
+            resource_bonus = -0.02  # Nearly full - very small penalty
+        
+        reward += resource_bonus
         
         # Mark assignment
         emergency["assigned_ambulance"] = ambulance_id
         emergency["assigned_hospital"] = hospital_id
         ambulance["available"] = False
-        ambulance["busy_until"] = int(travel_time + 5)  # Recovery time (convert to int)
+        ambulance["busy_until"] = int(travel_time + 5)  # Recovery time
         ambulance["current_emergency"] = emergency_id
         hospital["current_capacity"] -= 1
         hospital["patients"] += 1
@@ -402,7 +449,8 @@ class EmergencyResponseEnv:
         if emergency["severity"] >= 8:
             self.high_severity_handled += 1
         
-        return min(max(reward, -1.0), 1.0)  # Clamp reward to [-1, 1]
+        # CLAMP to [-1.0, 1.0] range
+        return min(max(reward, -1.0), 1.0)
     
     def _update_environment(self):
         """Update environment state each step."""

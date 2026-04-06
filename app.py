@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 app = FastAPI(
     title="Emergency Response AI Environment",
     description="OpenEnv-compliant emergency response optimization environment",
-    version="1.0"
+    version="2.0"
 )
 
 # Requirement 7: Environment variables

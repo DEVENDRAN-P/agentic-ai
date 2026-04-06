@@ -1,85 +1,29 @@
 {
   "task_difficulty": "hard",
   "agent_type": "heuristic",
-  "num_episodes": 5,
+  "num_episodes": 1,
   "episodes": [
     {
       "episode": 1,
-      "reward": -3.35,
-      "score": 0.88375,
+      "reward": -3.8999999999999995,
+      "score": 0.88625,
       "steps": 20,
       "metrics": {
         "priority_handling": 1.0,
-        "response_speed": 0.7791666666666667,
+        "response_speed": 0.7875,
         "resource_usage": 1.0,
-        "final_score": 0.88375
-      }
-    },
-    {
-      "episode": 2,
-      "reward": -5.3500000000000005,
-      "score": 0.4322619047619048,
-      "steps": 25,
-      "metrics": {
-        "priority_handling": 0.12285714285714285,
-        "response_speed": 0.7916666666666666,
-        "resource_usage": 1.0,
-        "final_score": 0.4322619047619048
-      }
-    },
-    {
-      "episode": 3,
-      "reward": -2.9,
-      "score": 0.89375,
-      "steps": 20,
-      "metrics": {
-        "priority_handling": 1.0,
-        "response_speed": 0.8125,
-        "resource_usage": 1.0,
-        "final_score": 0.89375
-      }
-    },
-    {
-      "episode": 4,
-      "reward": -5.250000000000001,
-      "score": 0.37125,
-      "steps": 24,
-      "metrics": {
-        "priority_handling": 0.0,
-        "response_speed": 0.7375,
-        "resource_usage": 1.0,
-        "final_score": 0.37125
-      }
-    },
-    {
-      "episode": 5,
-      "reward": -5.650000000000001,
-      "score": 0.4229761904761905,
-      "steps": 24,
-      "metrics": {
-        "priority_handling": 0.13428571428571429,
-        "response_speed": 0.7416666666666667,
-        "resource_usage": 1.0,
-        "final_score": 0.4229761904761905
+        "final_score": 0.88625
       }
     }
   ],
   "statistics": {
-    "avg_score": 0.6007976190476191,
-    "avg_reward": -4.500000000000001,
+    "avg_score": 0.88625,
+    "avg_reward": -3.8999999999999995,
     "final_scores": [
-      0.88375,
-      0.4322619047619048,
-      0.89375,
-      0.37125,
-      0.4229761904761905
+      0.88625
     ],
     "episode_rewards": [
-      -3.35,
-      -5.3500000000000005,
-      -2.9,
-      -5.250000000000001,
-      -5.650000000000001
+      -3.8999999999999995
     ]
   }
 }

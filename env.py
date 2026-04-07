@@ -399,8 +399,8 @@ if __name__ == "__main__":
     print("=" * 50)
     
     # Test reset
-    obs, _ = env.reset(seed=42)
-    print(f"Initial observation shape: {obs['emergencies'].shape}")
+    obs, info = env.reset()
+    print(f"Initial observation keys: {obs.keys()}")
     
     # Test step
     action = {

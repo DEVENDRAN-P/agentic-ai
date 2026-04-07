@@ -32,9 +32,9 @@ def check_imports() -> Tuple[bool, str]:
         from src.graders import create_grader_for_task
         from src.inference import run_inference
         from src.advanced_agents import create_agent
-        return True, "✓ All modules import successfully"
+        return True, "[OK] All modules import successfully"
     except Exception as e:
-        return False, f"✗ Import error: {e}"
+        return False, f"[FAIL] Import error: {e}"
 
 
 def check_openenv_compliance() -> Tuple[bool, str]:
@@ -46,30 +46,30 @@ def check_openenv_compliance() -> Tuple[bool, str]:
         # Check reset()
         state = env.reset()
         if not isinstance(state, dict):
-            return False, "✗ reset() does not return dict"
+            return False, "[FAIL] reset() does not return dict"
         
         # Check state()
         state = env.state()
         if not isinstance(state, dict):
-            return False, "✗ state() does not return dict"
+            return False, "[FAIL] state() does not return dict"
         
         # Check step()
         action = {"ambulance_id": 1, "emergency_id": 1, "hospital_id": 1}
         result = env.step(action)
         if not isinstance(result, tuple) or len(result) != 4:
-            return False, "✗ step() does not return (state, reward, done, info)"
+            return False, "[FAIL] step() does not return (state, reward, done, info)"
         
         next_state, reward, done, info = result
         if not isinstance(next_state, dict):
-            return False, "✗ step() state output not dict"
+            return False, "[FAIL] step() state output not dict"
         if not isinstance(reward, (int, float)):
-            return False, "✗ step() reward not numeric"
+            return False, "[FAIL] step() reward not numeric"
         if not isinstance(done, bool):
-            return False, "✗ step() done not boolean"
+            return False, "[FAIL] step() done not boolean"
         
-        return True, "✓ OpenEnv compliance verified (step, reset, state)"
+        return True, "[OK] OpenEnv compliance verified (step, reset, state)"
     except Exception as e:
-        return False, f"✗ OpenEnv check failed: {e}"
+        return False, f"[FAIL] OpenEnv check failed: {e}"
 
 
 def check_environment_structure() -> Tuple[bool, str]:
@@ -83,29 +83,29 @@ def check_environment_structure() -> Tuple[bool, str]:
         required_keys = ["emergencies", "ambulances", "hospitals", "traffic_level"]
         for key in required_keys:
             if key not in state:
-                return False, f"✗ State missing key: {key}"
+                return False, f"[FAIL] State missing key: {key}"
         
         # Check emergencies structure
         if not isinstance(state["emergencies"], list) or len(state["emergencies"]) == 0:
-            return False, "✗ Emergencies not valid list"
+            return False, "[FAIL] Emergencies not valid list"
         
         required_emergency_keys = ["id", "severity", "location", "time_waiting"]
         for e in state["emergencies"][:1]:
             for key in required_emergency_keys:
                 if key not in e:
-                    return False, f"✗ Emergency missing key: {key}"
+                    return False, f"[FAIL] Emergency missing key: {key}"
         
         # Check ambulances structure
         if not isinstance(state["ambulances"], list):
-            return False, "✗ Ambulances not valid list"
+            return False, "[FAIL] Ambulances not valid list"
         
         # Check hospitals structure
         if not isinstance(state["hospitals"], list):
-            return False, "✗ Hospitals not valid list"
+            return False, "[FAIL] Hospitals not valid list"
         
-        return True, "✓ Environment structure correct"
+        return True, "[OK] Environment structure correct"
     except Exception as e:
-        return False, f"✗ Environment structure check failed: {e}"
+        return False, f"[FAIL] Environment structure check failed: {e}"
 
 
 def check_grading_system() -> Tuple[bool, str]:
@@ -137,15 +137,15 @@ def check_grading_system() -> Tuple[bool, str]:
         required_metrics = ["priority_handling", "response_speed", "resource_usage", "final_score"]
         for metric in required_metrics:
             if metric not in metrics:
-                return False, f"✗ Grader missing metric: {metric}"
+                return False, f"[FAIL] Grader missing metric: {metric}"
         
         # Check score in valid range
         if not (0.0 <= metrics["final_score"] <= 1.0):
-            return False, f"✗ Final score out of range: {metrics['final_score']}"
+            return False, f"[FAIL] Final score out of range: {metrics['final_score']}"
         
-        return True, "✓ Grading system operational"
+        return True, "[OK] Grading system operational"
     except Exception as e:
-        return False, f"✗ Grading system check failed: {e}"
+        return False, f"[FAIL] Grading system check failed: {e}"
 
 
 def check_task_progression() -> Tuple[bool, str]:
@@ -162,11 +162,11 @@ def check_task_progression() -> Tuple[bool, str]:
             next_state, reward, done, info = env.step(action)
             
             if not isinstance(reward, (int, float)):
-                return False, f"✗ {difficulty} task doesn't return valid reward"
+                return False, f"[FAIL] {difficulty} task doesn't return valid reward"
         
-        return True, "✓ All task difficulties operational (easy, medium, hard)"
+        return True, "[OK] All task difficulties operational (easy, medium, hard)"
     except Exception as e:
-        return False, f"✗ Task progression check failed: {e}"
+        return False, f"[FAIL] Task progression check failed: {e}"
 
 
 def check_inference_output() -> Tuple[bool, str]:
@@ -191,9 +191,9 @@ def check_inference_output() -> Tuple[bool, str]:
         
         # Check format
         if "[START]" not in output:
-            return False, "✗ Missing [START] tag"
+            return False, "[FAIL] Missing [START] tag"
         if "[END]" not in output:
-            return False, "✗ Missing [END] tag"
+            return False, "[FAIL] Missing [END] tag"
         
         # Check result structure
         if "episodes" not in result or "statistics" not in result:
